@@ -1,201 +1,189 @@
 # 🧠 AICodeEditor
 
-**AICodeEditor** ist ein in **Kotlin Compose Multiplatform** entwickelter,  
-intelligenter Code-Editor mit nativer **AI-Integration**.  
-Er soll es ermöglichen, dass sowohl **Menschen** als auch **KI-Agenten**  
-den gleichen Editor nahtlos bedienen können – ohne textbasierte Diff-Hacks  
-oder unstrukturierte Patches.
+**AICodeEditor** ist ein vollständig in **Kotlin Compose Multiplatform** entwickelter,
+intelligenter Code-Editor mit nativer **AI-Integration** und **ohne BasicTextField**.
+
+---
+
+## 🚫 Warum kein BasicTextField
+
+`BasicTextField` ist eine High-Level-Komponente von Compose, die auf TextInputService und
+Plattform-IME aufbaut. Sie ist für einfache Editoren gedacht, **nicht** für
+strukturierte, zeilenweise kontrollierte Editoren mit:
+
+- eigener Zeichen- und Layoutlogik (Canvas / Paragraph)
+- semantischem Cursor- und Selektionsmodell
+- Syntax Highlighting auf Tokenbasis
+- KI-Transaktionen (strukturierte EditPlans)
+- Undo/Redo mit Transaktionsgruppen
+- Millionen Zeilen ohne Reflow
+
+### Probleme mit BasicTextField
+
+1. **Unkontrollierbares Repaint** – ganze Textregion wird bei jedem Edit neu gezeichnet.  
+2. **IME- und Clipboard-Bugs** – insbesondere bei Multiline und Undo.  
+3. **Fehlende Transparenz** – Cursor-Position und Textlayout nur intern verfügbar.  
+4. **Kein Token- oder Line-basiertes Rendering** – unbrauchbar für Syntax.  
+5. **Performanceeinbruch** bei langen Dateien.  
+6. **Ungeeignet für KI-Integration**, da Editorenoperationen nicht deterministisch steuerbar sind.
+
+### Lösung: Canvas + Paragraph
+
+AICodeEditor rendert jede Zeile manuell mit **Skia Paragraphs** auf einem **Canvas**.
+Das erlaubt:
+
+- **Volle Kontrolle** über Layout, Caching und Scrollverhalten.  
+- **Viewport-basiertes Rendering** (nur sichtbare Zeilen).  
+- **Eigener Cursor / Auswahl** mit Pixelgenauigkeit.  
+- **AI-Overlays** für semantische Änderungen.  
+- **Reproduzierbare Textoperationen** für KI-Agenten.
 
 ---
 
 ## 🎯 Vision
 
-AICodeEditor ist der erste **AI-native Code Editor**, der
-strukturierte, transaktionale Änderungen unterstützt:
+Ziel ist eine Umgebung, in der **Mensch und KI** denselben Editor benutzen können,
+ohne Zwischenlayer wie HTML, DOM oder TextField-APIs.
 
-- **Menschen** bearbeiten Quelltext visuell und intuitiv.  
-- **KI-Agenten** (z. B. über JSON-RPC / WebSocket) interagieren mit demselben Dokument,
-  führen Operationen aus wie *InsertAfter(Class X)* oder *RenameSymbol(foo→bar)*  
-  und committen diese Änderungen atomar.
+- **Menschen** sehen eine native Compose-Oberfläche.
+- **KI** steuert denselben Editor über JSON-RPC und strukturierte EditPlans.
 
-Ziel ist eine Umgebung, in der KI nicht nur Code „vorschlägt“,  
-sondern **real, sicher und semantisch korrekt** editieren kann.
+Die Änderungen werden **atomar**, **parse-validiert** und **undo-fähig** ausgeführt.
 
 ---
 
 ## 🧩 System Overview
 
 ### 1. Core Engine
-- **TextBuffer** (Piece Table oder Rope) für performantes Editing  
-- **Cursor / Selection** Model  
-- **Incremental Lexer + Parser** (line-basiert, state-aware)  
-- **Undo / Redo** via Transaction-Log  
+- `TextBuffer` (Piece Table oder Rope) für performantes Editing  
+- `LineIndex` für Offset↔(line,col) Mapping  
+- `UndoManager` für Transaktionen  
+- `Parser` und `Tokenizer` (Monarch-ähnlich)  
+- keine Abhängigkeit zu Compose
 
 ### 2. Rendering / UI
-- **Compose Multiplatform + Skia**  
-- **Viewport-Only Rendering** (10 000 Zeilen smooth)  
-- **Syntax Highlighting** über Token Cache  
-- **Line Numbers**, **Minimap**, **Gutter**, **Status Bar**
+- Canvas-basiertes Rendering (Skia / Paragraph)  
+- Viewport-only Darstellung  
+- Syntax Highlighting  
+- Caret + Selection Layer  
+- AI-Overlays (Changes, Diagnostics, Suggestions)
 
 ### 3. AI Interface
-- **EditPlan API** (JSON / RPC)  
-- **Atomic Transaction Model** (Commit / Rollback)  
-- **Semantic Selectors** (AST, Regex, Symbol, Anchor)  
-- **Constraint-System** (mustParse, forbidTouching, maxAddedBytes)  
-- **Dry-Run / Preview Mode**  
-- **Auto-Heal** (fehlende Klammern, Quotes etc.)
+- EditPlan API (strukturierte Operationen statt Diffs)  
+- Commit/Rollback-Transaktionen  
+- Constraints: `mustParse`, `forbidTouching`, `maxAddedBytes`  
+- AutoHeal (Klammern, Quotes)  
+- DryRun/Preview-Modus
 
-### 4. Human UX
-- **Command Palette & Shortcuts**  
-- **Timeline View** für AI-Operationen  
-- **Animated Highlights** für geänderte Ranges  
-- **Undo ganzer Plans**  
-- **Diff Preview View**
-
-### 5. Future Modules
-- **Language Plugins** (Tokenizer / Parser DSL)  
-- **LSP Integration** für Diagnostics & Completion  
-- **Collaborative / Multi-Agent Editing**
+### 4. UX Layer
+- Command Palette  
+- Timeline für KI-Aktionen  
+- DiffPreview  
+- Undo/Redo (Plan-basiert)
 
 ---
 
-## 🧱 Architektur
+## ⚙️ Technische Umsetzung
+
+### Rendering
+- pro Zeile: `Paragraph` mit monospace Font
+- Zeilenhöhe konstant (z. B. 20 px)
+- horizontales Clipping statt Line-Wrap
+- Paragraph-Cache mit Hash-Key `(lineHash, width, font)`
+
+### Input
+- Keyboard Handling über `onPreviewKeyEvent`
+- eigene Keymap für Pfeiltasten, Enter, Backspace, Selection
+- kein IME (später optional per Platform Bridge)
+
+### Performance
+- nur sichtbare Zeilen rendern (Viewport ± 2 Zeilen)
+- incremental tokenization / lazy paragraph build
+- Repaint auf Dirty Lines
+- Speicher-Cache für 10 000 Zeilen unter 50 ms
+
+---
+
+## 🚀 Iterative Entwicklung (Claude / Codex / Cline)
+
+### 🟢 Iteration 1 – Core
+- `TextBuffer.kt` + `LineIndex.kt`
+- Insert/Delete, Offset-Konvertierung, Tests
+
+### 🟢 Iteration 2 – Canvas Rendering
+- `EditorView.kt` + `TextPainter.kt`
+- Paragraph-basiertes Zeichnen ohne BasicTextField
+
+### 🟢 Iteration 3 – Keymap & Cursor
+- `Keymap.kt` für Tastenlogik (ASCII)
+- Cursorbewegung, Enter, Backspace, Insert
+
+### 🟢 Iteration 4 – Selection & Highlight
+- Auswahl mit Shift + Pfeilen
+- Zeichnen der Markierung per Rect
+
+### 🟢 Iteration 5 – Undo/Redo
+- Transaktionales Edit-Log
+- Coalescing von Tipparien
+
+### 🟢 Iteration 6 – AI-Integration
+- `EditPlan.kt`, `Selector.kt`, `EditExecutor.kt`
+- JSON-RPC Schnittstelle
+
+### 🟢 Iteration 7 – Diagnostics & LSP
+- `LspClient.kt`
+- Fehler- und Hover-Anzeige
+
+---
+
+## 🧱 Architekturübersicht
 
 ```
 AICodeEditor
 │
 ├── core/
 │   ├─ TextBuffer.kt
-│   ├─ Cursor.kt
-│   ├─ EditTransaction.kt
-│   └─ UndoManager.kt
+│   ├─ LineIndex.kt
+│   ├─ UndoManager.kt
+│   └─ EditTransaction.kt
 │
 ├── syntax/
 │   ├─ TokenizerDSL.kt
-│   ├─ TokenCache.kt
-│   └─ SyntaxHighlighter.kt
+│   └─ TokenCache.kt
 │
 ├── ai/
 │   ├─ EditPlan.kt
 │   ├─ Selector.kt
 │   ├─ EditExecutor.kt
-│   ├─ AutoHeal.kt
-│   └─ JsonRpcServer.kt
-│
-├── parser/
-│   ├─ IncrementalParser.kt
-│   ├─ AstNode.kt
-│   └─ SelectorResolver.kt
+│   ├─ JsonRpcServer.kt
+│   └─ AutoHeal.kt
 │
 └── ui/
     ├─ EditorView.kt
+    ├─ paint/TextPainter.kt
+    ├─ input/Keymap.kt
     ├─ PlanTimeline.kt
-    ├─ DiffPreview.kt
-    ├─ CommandPalette.kt
-    └─ RangeHighlightLayer.kt
+    └─ DiffPreview.kt
 ```
 
 ---
 
-## 🧮 Iterative Roadmap für GPT-5 Codex / Cline
+## ✅ Ziel für Claude
 
-Jede Iteration liefert einen funktionierenden Baustein.  
-Codex soll pro Schritt kompilierbaren Code liefern, keine unreferenzierten Klassen,  
-und jede Iteration abschließen mit „✅ Build passes, next goal: …“.
+Claude soll schrittweise:
+1. **Core aufbauen** (TextBuffer + LineIndex)  
+2. **Rendering umstellen** (Canvas/Paragraph)  
+3. **Keymap hinzufügen**  
+4. **Selection und Undo ergänzen**  
+5. **AI-EditPlan-API implementieren**  
 
----
-
-### 🟢 Iteration 1 – Core Text Engine
-**Ziel:** Grundlegender TextBuffer mit Undo/Redo und Viewport-Rendering  
-
-**Deliverables**
-- `TextBuffer.kt` (PieceTable oder Rope)  
-- `TextCursor.kt` (Position, Selection, Navigation)  
-- `EditorState.kt` (immutable State für Compose)  
-- `EditorView.kt` (Render nur sichtbare Zeilen)  
-- `SyntaxHighlighter.kt` (Mock-Tokenizer)  
-- Unit-Tests für Insert/Delete/Scroll/Undo  
+Jede Iteration liefert **kompilierbaren Code** ohne `BasicTextField`.
 
 ---
 
-### 🟢 Iteration 2 – Tokenization & Syntax
-**Ziel:** Monarch-ähnlicher Tokenizer mit incremental Lexing  
+## 💬 Zusammenfassung
 
-**Deliverables**
-- `TokenizerDSL.kt` (State + Regex-basierte Regeln)  
-- `TokenCache.kt` (Line→Tokens + NextState)  
-- Integration in `EditorView` für Syntaxfarben  
-- Performance-Test (10 k Zeilen < 20 ms Repaint)
-
----
-
-### 🟢 Iteration 3 – AI Edit Transaction API
-**Ziel:** Strukturierte KI-Bearbeitung statt Diffs  
-
-**Deliverables**
-- `EditTransaction.kt` (Insert, Replace, Delete, Commit/Rollback)  
-- `Selector.kt` (ByAst, ByRegex, BySymbol, ByAnchor)  
-- `EditPlan.kt` (List of Ops + Constraints)  
-- `EditExecutor.kt` (atomic apply + parser validation)  
-- `JsonRpcServer.kt` (stdin/stdout oder WebSocket)  
-- `AutoHeal.kt` (Einfache Klammer/Quote-Reparatur)
-
----
-
-### 🟢 Iteration 4 – Semantic Selectors & Parser
-**Ziel:** AST-basierte Selektion + Validierung  
-
-**Deliverables**
-- `IncrementalParser.kt` (better-parse oder eigene Implementierung)  
-- `SelectorResolver.kt` (AST→Range)  
-- `ConstraintChecker.kt` (Parse before commit)  
-- `ParserDiagnostics.kt` (Error-Overlay im UI)
-
----
-
-### 🟢 Iteration 5 – UX for AI and Human
-**Ziel:** Interaktive Visualisierung der AI-Aktionen  
-
-**Deliverables**
-- `PlanTimeline.kt` (chronologische Ops-Darstellung)  
-- `RangeHighlightLayer.kt` (Animierte Highlights)  
-- `UndoManager.kt` (Plan-basiertes Undo)  
-- `CommandPalette.kt` (Manuelles Auslösen von Ops)  
-- `DiffPreview.kt` (Vor/Nach Vergleich)
-
----
-
-### 🟢 Iteration 6 – LSP / Diagnostics Integration
-**Ziel:** Syntaxprüfung und Completion über Language Server  
-
-**Deliverables**
-- `LspClient.kt` (LSP4J)  
-- `DiagnosticsOverlay.kt` (Rote Wellenlinie + Tooltip)  
-- `CompletionPopup.kt` (Autovervollständigung)
-
----
-
-### 🟢 Iteration 7 – Plugin & Language System
-**Ziel:** Externe Sprachen per DSL beschreibbar  
-
-**Deliverables**
-- `LanguagePlugin.kt` (SyntaxRules, Formatter, ParserFactory)  
-- `LanguageRegistry.kt` (Register / Discover)  
-- Beispiel-Plugin (z. B. für Kotlin-Lite)
-
----
-
-## ⚙️ Design Guidelines für Codex (Cline)
-
-- Eine Iteration = ein Pull Request / Codeblock  
-- Code muss immer kompilierbar sein  
-- Keine Referenzen auf nicht existierende Dateien  
-- Am Ende jeder Iteration kurzer Status:  
-  `✅ Build passes, next goal: <next iteration>`  
-
----
-
-## 🧠 Langfristiges Ziel
-
-AICodeEditor soll die Basis für zukünftige AI-Native Entwicklungsumgebungen werden,  
-in denen KI und Mensch gemeinsam an Code, Logik und Kreativität arbeiten können.
+> **AICodeEditor ersetzt BasicTextField vollständig durch Canvas + Paragraph.**
+>
+> Dadurch wird der Editor deterministisch, performant und KI-fähig.
+> Der gesamte Textfluss, das Layout und die Ereignissteuerung liegen vollständig in unserer Hand.
