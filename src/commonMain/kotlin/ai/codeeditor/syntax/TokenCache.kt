@@ -12,20 +12,31 @@ class TokenCache(
     
     /**
      * Get tokens for a line, using cache if valid.
+     * Handles multiline comment state across lines.
      */
-    fun getTokens(lineNumber: Int, lineText: String): LineTokens {
+    fun getTokens(lineNumber: Int, lineText: String, linesProvider: (Int) -> String): LineTokens {
         val lineHash = lineText.hashCode()
         val cached = cache[lineNumber]
-        
-        // Return cached if valid
         if (cached != null && cached.lineHash == lineHash) {
             return cached
         }
-        
-        // Tokenize and cache
-        val tokens = tokenizer.tokenize(lineText, lineNumber)
+
+        // Track multiline comment state from previous lines
+        val multilineState = MultilineState()
+        for (i in 0 until lineNumber) {
+            val line = linesProvider(i)
+            // If line contains "/*" but not "*/", set state to inComment
+            if (line.contains("/*") && !line.contains("*/")) {
+                multilineState.inComment = true
+            }
+            if (line.contains("*/")) {
+                multilineState.inComment = false
+            }
+            tokenizer.tokenize(line, i, multilineState)
+        }
+        val tokens = tokenizer.tokenize(lineText, lineNumber, multilineState)
         cache[lineNumber] = tokens
-        
+
         // Limit cache size (simple FIFO)
         if (cache.size > maxCacheSize) {
             val oldestKey = cache.keys.minOrNull()
@@ -33,15 +44,17 @@ class TokenCache(
                 cache.remove(oldestKey)
             }
         }
-        
+
         return tokens
     }
     
     /**
      * Invalidate a specific line (called when line is edited).
+     * Also invalidate all following lines to force recomposition for multiline comments.
      */
     fun invalidateLine(lineNumber: Int) {
-        cache.remove(lineNumber)
+        val affected = cache.keys.filter { it >= lineNumber }
+        affected.forEach { cache.remove(it) }
     }
     
     /**

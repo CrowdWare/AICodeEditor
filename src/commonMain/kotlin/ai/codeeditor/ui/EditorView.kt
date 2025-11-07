@@ -72,6 +72,18 @@ fun EditorView(
     val leftMargin = 60f
     val topPadding = 8f
 
+    // Force recomposition when stateRevision changes
+    // This is more stable than key() which recreates the entire composable
+    val state = remember(stateRevision) { controller.state }
+    val buffer = controller.buffer
+
+    // Invalidate all visible lines after jeder Änderung
+    LaunchedEffect(stateRevision) {
+        val firstVisibleLine = 0
+        val lastVisibleLine = buffer.lineCount - 1
+        tokenCache.invalidateRange(firstVisibleLine, lastVisibleLine)
+    }
+
     // Request focus on first composition
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -84,11 +96,6 @@ fun EditorView(
             controller.setViewportLines(max(1, lines))
         }
     }
-
-    // Force recomposition when stateRevision changes
-    // This is more stable than key() which recreates the entire composable
-    val state = remember(stateRevision) { controller.state }
-    val buffer = controller.buffer
 
     Box(
         modifier = modifier
@@ -154,8 +161,12 @@ fun EditorView(
                 val lineEnd = buffer.lineEnd(line)
                 val lineText = buffer.get(lineStart until lineEnd).toString()
                 
-                // Tokenize and create styled text
-                val lineTokens = tokenCache.getTokens(line, lineText)
+                // Tokenize and create styled text (multiline comment support)
+                val lineTokens = tokenCache.getTokens(line, lineText) { idx ->
+                    val start = buffer.lineStart(idx)
+                    val end = buffer.lineEnd(idx)
+                    buffer.get(start until end).toString()
+                }
                 val styledText = buildAnnotatedString {
                     for (token in lineTokens.tokens) {
                         withStyle(SpanStyle(color = SyntaxColors.getColor(token.type))) {

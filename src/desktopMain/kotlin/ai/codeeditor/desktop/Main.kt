@@ -18,8 +18,10 @@ fun main() = application {
         val buffer = remember {
             SimpleTextBuffer(
                 """
-                // AICodeEditor - Canvas + Paragraph Rendering
-                // No BasicTextField - Full Control
+                /* 
+                    AICodeEditor - Canvas + Paragraph Rendering
+                    No BasicTextField - Full Control
+                */
                 
                 fun main() {
                     println("Hello from AICodeEditor!")

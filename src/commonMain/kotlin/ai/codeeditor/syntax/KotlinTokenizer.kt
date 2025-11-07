@@ -28,15 +28,69 @@ class KotlinTokenizer {
     
     /**
      * Tokenize a single line of Kotlin code.
+     * Supports multi-line comments via state.
+     * Fix: Multiline comment state is now local to each tokenize call.
      */
-    fun tokenize(lineText: String, lineNumber: Int): LineTokens {
+    fun tokenize(lineText: String, lineNumber: Int, multilineState: MultilineState = MultilineState()): LineTokens {
         val tokens = mutableListOf<Token>()
         var pos = 0
-        
+        var inMultilineComment = multilineState.inComment
+
+        // Fix: If line is inside multiline comment, mark entire line as COMMENT (even if "*/" not found)
+        if (inMultilineComment) {
+            val endIndex = lineText.indexOf("*/")
+            if (endIndex != -1) {
+                tokens.add(Token(
+                    TokenType.COMMENT,
+                    0,
+                    endIndex + 2,
+                    lineText.substring(0, endIndex + 2)
+                ))
+                pos = endIndex + 2
+                inMultilineComment = false
+                multilineState.inComment = false
+            } else {
+                tokens.add(Token(
+                    TokenType.COMMENT,
+                    0,
+                    lineText.length,
+                    lineText
+                ))
+                pos = lineText.length
+                multilineState.inComment = true
+            }
+        }
+
         while (pos < lineText.length) {
             val remaining = lineText.substring(pos)
-            
+
             when {
+                // Multi-line comment start
+                remaining.startsWith("/*") -> {
+                    val endIndex = remaining.indexOf("*/")
+                    if (endIndex != -1) {
+                        tokens.add(Token(
+                            TokenType.COMMENT,
+                            pos,
+                            pos + endIndex + 2,
+                            remaining.substring(0, endIndex + 2)
+                        ))
+                        pos += endIndex + 2
+                        inMultilineComment = false
+                        multilineState.inComment = false
+                    } else {
+                        tokens.add(Token(
+                            TokenType.COMMENT,
+                            pos,
+                            lineText.length,
+                            remaining
+                        ))
+                        pos = lineText.length
+                        inMultilineComment = true
+                        multilineState.inComment = true
+                    }
+                }
+
                 // Whitespace
                 remaining.matches(Regex("^\\s+.*")) -> {
                     val match = Regex("^\\s+").find(remaining)!!
@@ -48,7 +102,7 @@ class KotlinTokenizer {
                     ))
                     pos += match.value.length
                 }
-                
+
                 // Single-line comment
                 remaining.startsWith("//") -> {
                     val commentText = remaining
@@ -60,19 +114,31 @@ class KotlinTokenizer {
                     ))
                     pos = lineText.length
                 }
-                
-                // Multi-line comment start (simplified - doesn't track state across lines yet)
+
+                // Multi-line comment start
                 remaining.startsWith("/*") -> {
                     val endIndex = remaining.indexOf("*/")
-                    val commentEnd = if (endIndex != -1) endIndex + 2 else remaining.length
-                    val commentText = remaining.substring(0, commentEnd)
-                    tokens.add(Token(
-                        TokenType.COMMENT,
-                        pos,
-                        pos + commentEnd,
-                        commentText
-                    ))
-                    pos += commentEnd
+                    if (endIndex != -1) {
+                        // End of comment in same line
+                        tokens.add(Token(
+                            TokenType.COMMENT,
+                            pos,
+                            pos + endIndex + 2,
+                            remaining.substring(0, endIndex + 2)
+                        ))
+                        pos += endIndex + 2
+                        inMultilineComment = false
+                    } else {
+                        // Start of multiline comment, continues to next line
+                        tokens.add(Token(
+                            TokenType.COMMENT,
+                            pos,
+                            lineText.length,
+                            remaining
+                        ))
+                        pos = lineText.length
+                        inMultilineComment = true
+                    }
                 }
                 
                 // String literals
@@ -198,3 +264,8 @@ class KotlinTokenizer {
         )
     }
 }
+
+/**
+ * Tracks multiline comment state between lines.
+ */
+class MultilineState(var inComment: Boolean = false)
