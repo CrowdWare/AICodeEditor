@@ -15,8 +15,6 @@ fun main() = application {
         title = "AICodeEditor - Canvas Based Editor",
         state = rememberWindowState(width = 1200.dp, height = 800.dp)
     ) {
-        var refreshKey by remember { mutableStateOf(0) }
-        
         val buffer = remember {
             SimpleTextBuffer(
                 """
@@ -53,15 +51,20 @@ fun main() = application {
             )
         }
         
+        // Use mutableStateOf for reactive updates instead of key()
+        var stateRevision by remember { mutableStateOf(0) }
+        
         val controller = remember(buffer) {
             EditorController(
                 buffer = buffer,
-                onStateChange = { refreshKey++ }
+                onStateChange = { stateRevision++ }
             )
         }
         
-        key(refreshKey) {
-            EditorView(controller = controller)
-        }
+        // Pass stateRevision to force recomposition but don't recreate the view
+        EditorView(
+            controller = controller,
+            stateRevision = stateRevision
+        )
     }
 }

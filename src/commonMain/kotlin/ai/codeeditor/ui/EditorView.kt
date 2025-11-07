@@ -18,6 +18,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -37,7 +39,8 @@ import kotlin.math.min
 @Composable
 fun EditorView(
     controller: EditorController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    stateRevision: Int = 0
 ) {
     val density = LocalDensity.current
     val fontFamilyResolver = LocalFontFamilyResolver.current
@@ -74,8 +77,9 @@ fun EditorView(
         }
     }
 
-    // Read state and buffer directly - the key() in Main.kt handles recomposition
-    val state = controller.state
+    // Force recomposition when stateRevision changes
+    // This is more stable than key() which recreates the entire composable
+    val state = remember(stateRevision) { controller.state }
     val buffer = controller.buffer
 
     Box(
@@ -169,15 +173,17 @@ fun EditorView(
             }
         }
         
-        // Invisible overlay for mouse input
+        // Invisible overlay for mouse input with text cursor
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .pointerHoverIcon(PointerIcon.Text)
                 .pointerInput(buffer, textPainter, lineHeight, leftMargin) {
                 detectTapGestures { offset ->
                     focusRequester.requestFocus()
                     val currentState = controller.state
-                    val clickY = offset.y + currentState.scrollY
+                    // Adjust clickY: remove topPadding offset from rendering
+                    val clickY = offset.y + currentState.scrollY - topPadding
                     val line = (clickY / lineHeight).toInt().coerceIn(0, buffer.lineCount - 1)
                     
                     val lineStart = buffer.lineStart(line)
@@ -207,7 +213,8 @@ fun EditorView(
                     onDragStart = { offset ->
                         focusRequester.requestFocus()
                         val currentState = controller.state
-                        val clickY = offset.y + currentState.scrollY
+                        // Adjust clickY: remove topPadding offset from rendering
+                        val clickY = offset.y + currentState.scrollY - topPadding
                         val line = (clickY / lineHeight).toInt().coerceIn(0, buffer.lineCount - 1)
                         
                         val lineStart = buffer.lineStart(line)
@@ -234,7 +241,8 @@ fun EditorView(
                     onDrag = { change, _ ->
                         val offset = change.position
                         val currentState = controller.state
-                        val dragY = offset.y + currentState.scrollY
+                        // Adjust dragY: remove topPadding offset from rendering
+                        val dragY = offset.y + currentState.scrollY - topPadding
                         val line = (dragY / lineHeight).toInt().coerceIn(0, buffer.lineCount - 1)
                         
                         val lineStart = buffer.lineStart(line)
