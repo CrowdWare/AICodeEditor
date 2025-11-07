@@ -187,3 +187,63 @@ Jede Iteration liefert **kompilierbaren Code** ohne `BasicTextField`.
 >
 > Dadurch wird der Editor deterministisch, performant und KI-fähig.
 > Der gesamte Textfluss, das Layout und die Ereignissteuerung liegen vollständig in unserer Hand.
+
+---
+
+## 📦 Integration in dein Projekt
+
+### 1. Installation via MavenLocal
+
+Baue und installiere das Artefakt lokal:
+```bash
+./gradlew publishToMavenLocal
+```
+
+### 2. Abhängigkeit in deinem Projekt
+
+Füge in deiner `build.gradle.kts` hinzu:
+```kotlin
+repositories {
+    mavenLocal()
+    // ggf. weitere Repositories
+}
+
+dependencies {
+    implementation("ai.codeeditor:codeeditor:1.0.0")
+}
+```
+
+### 3. EditorView verwenden
+
+Beispiel für Compose Multiplatform:
+
+```kotlin
+import ai.codeeditor.core.EditorController
+import ai.codeeditor.ui.EditorView
+
+val buffer = SimpleTextBuffer("fun main() {\n    println(\"Hello World!\")\n}")
+val controller = EditorController(buffer)
+
+EditorView(controller = controller)
+```
+
+### 4. Desktop Main
+
+```kotlin
+fun main() = application {
+    Window(
+        onCloseRequest = ::exitApplication,
+        title = "AICodeEditor",
+        state = rememberWindowState(width = 1200.dp, height = 800.dp)
+    ) {
+        val buffer = remember { SimpleTextBuffer("fun main() {\n    println(\"Hello World!\")\n}") }
+        val controller = remember(buffer) { EditorController(buffer) }
+        EditorView(controller = controller)
+    }
+}
+```
+
+### 5. Hinweise
+
+- Die API ist Compose Multiplatform-kompatibel.
+- Syntax Highlighting, Undo/Redo und Keymap sind integriert.

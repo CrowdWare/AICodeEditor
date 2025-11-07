@@ -2,6 +2,7 @@ plugins {
     kotlin("multiplatform") version "2.1.0"
     id("org.jetbrains.compose") version "1.7.1"
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.0"
+    id("maven-publish")
 }
 
 group = "ai.codeeditor"
@@ -37,5 +38,13 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "ai.codeeditor.desktop.MainKt"
+    }
+}
+
+
+// Publishing configuration for multiplatform
+publishing {
+    repositories {
+        mavenLocal()
     }
 }
