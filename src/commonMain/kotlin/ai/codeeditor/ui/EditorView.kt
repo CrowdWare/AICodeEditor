@@ -1,6 +1,8 @@
 package ai.codeeditor.ui
 
 import ai.codeeditor.core.EditorController
+import ai.codeeditor.syntax.SyntaxColors
+import ai.codeeditor.syntax.TokenCache
 import ai.codeeditor.ui.input.Keymap
 import ai.codeeditor.ui.paint.TextPainter
 import androidx.compose.foundation.Canvas
@@ -25,8 +27,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import kotlin.math.max
@@ -59,6 +65,8 @@ fun EditorView(
             )
         )
     }
+    
+    val tokenCache = remember { TokenCache() }
 
     val lineHeight = with(density) { 20.sp.toPx() }
     val leftMargin = 60f
@@ -141,13 +149,23 @@ fun EditorView(
                     drawLine(lineNum, 8f, y, leftMargin - 16f)
                 }
                 
-                // Line text
+                // Line text with syntax highlighting
                 val lineStart = buffer.lineStart(line)
                 val lineEnd = buffer.lineEnd(line)
                 val lineText = buffer.get(lineStart until lineEnd).toString()
                 
+                // Tokenize and create styled text
+                val lineTokens = tokenCache.getTokens(line, lineText)
+                val styledText = buildAnnotatedString {
+                    for (token in lineTokens.tokens) {
+                        withStyle(SpanStyle(color = SyntaxColors.getColor(token.type))) {
+                            append(token.text)
+                        }
+                    }
+                }
+                
                 with(textPainter) {
-                    drawLine(lineText, leftMargin, y, size.width - leftMargin)
+                    drawStyledLine(styledText, leftMargin, y, size.width - leftMargin)
                 }
             }
 

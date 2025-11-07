@@ -74,9 +74,24 @@ object Keymap {
                 true
             }
             else -> {
-                // Handle clipboard shortcuts FIRST
+                // Handle clipboard and editing shortcuts FIRST
                 if (cmdOrCtrl) {
                     when (event.key) {
+                        Key.Z -> {
+                            if (shift) {
+                                // Cmd/Ctrl+Shift+Z = Redo
+                                controller.redo()
+                            } else {
+                                // Cmd/Ctrl+Z = Undo
+                                controller.undo()
+                            }
+                            return true
+                        }
+                        Key.Y -> {
+                            // Cmd/Ctrl+Y = Redo (alternative)
+                            controller.redo()
+                            return true
+                        }
                         Key.A -> {
                             controller.selectAll()
                             return true

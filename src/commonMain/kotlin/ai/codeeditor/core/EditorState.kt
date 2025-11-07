@@ -49,12 +49,21 @@ class EditorController(
     private val onStateChange: () -> Unit = {}
 ) {
     private var desiredColumn: Int? = null
+    private val undoManager = UndoManager()
 
     var state: EditorState = clampState(initialState)
         private set(value) {
             field = value
             onStateChange()
         }
+
+    /**
+     * Restore cursor and selection state (used by undo/redo).
+     */
+    internal fun restoreState(cursor: Cursor, selection: Selection?) {
+        state = state.copy(cursor = cursor, selection = selection)
+        desiredColumn = null
+    }
 
     private fun selectionNormalized(): Selection? = state.selection?.normalized()
 
@@ -102,63 +111,180 @@ class EditorController(
     }
 
     fun insertText(text: CharSequence) {
-        if (text.isEmpty()) return
+        // Allow empty text to delete selection
+        val cursorBefore = state.cursor
+        val selectionBefore = state.selection
+        
+        // If text is empty and no selection, do nothing
+        if (text.isEmpty() && selectionBefore == null) return
+        
         val caretBefore = caretOffset()
         val selection = selectionNormalized()
         val start = selection?.start ?: caretBefore
         val end = selection?.end ?: caretBefore
         val startClamped = start.coerceIn(0, buffer.length)
         val endClamped = end.coerceIn(startClamped, buffer.length)
-        deleteRange(startClamped, endClamped)
-        buffer.insert(startClamped, text)
+        
+        // Get deleted text for undo
+        val deletedText = if (endClamped > startClamped) {
+            buffer.get(startClamped until endClamped).toString()
+        } else {
+            ""
+        }
+        
+        // Calculate cursor position after operation (must be done BEFORE modifying buffer)
+        // We need to temporarily calculate what the position will be
+        val tempBuffer = SimpleTextBuffer(buffer.get(0 until buffer.length).toString())
+        if (deletedText.isNotEmpty()) {
+            tempBuffer.delete(startClamped until endClamped)
+        }
+        tempBuffer.insert(startClamped, text)
+        val cursorAfter = tempBuffer.toLineCol(startClamped + text.length).let { Cursor(it.first, it.second) }
+        
+        // Create command
+        val command = if (deletedText.isNotEmpty()) {
+            // This is a replace operation
+            ReplaceCommand(
+                offset = startClamped,
+                deletedText = deletedText,
+                insertedText = text.toString(),
+                cursorBefore = cursorBefore,
+                selectionBefore = selectionBefore,
+                cursorAfter = cursorAfter,
+                selectionAfter = null
+            )
+        } else {
+            // This is a pure insert
+            InsertCommand(
+                offset = startClamped,
+                text = text.toString(),
+                cursorBefore = cursorBefore,
+                selectionBefore = selectionBefore,
+                cursorAfter = cursorAfter,
+                selectionAfter = null
+            )
+        }
+        
+        // Execute through undo manager
+        undoManager.executeCommand(command, buffer, this)
         desiredColumn = null
-        setCursorOffset(startClamped + text.length, select = false)
     }
 
     fun insertNewLine() = insertText("\n")
 
     fun deleteBackward() {
+        val cursorBefore = state.cursor
+        val selectionBefore = state.selection
         val caretBefore = caretOffset()
         val selection = selectionNormalized()
+        
         if (selection != null && !selection.isEmpty()) {
-            replaceSelection("")
+            // Delete selection
+            val deletedText = buffer.get(selection.start until selection.end).toString()
+            // Calculate cursor position after deletion
+            val tempBuffer = SimpleTextBuffer(buffer.get(0 until buffer.length).toString())
+            tempBuffer.delete(selection.start until selection.end)
+            val cursorAfter = tempBuffer.toLineCol(selection.start).let { Cursor(it.first, it.second) }
+            
+            val command = DeleteCommand(
+                offset = selection.start,
+                deletedText = deletedText,
+                cursorBefore = cursorBefore,
+                selectionBefore = selectionBefore,
+                cursorAfter = cursorAfter,
+                selectionAfter = null
+            )
+            undoManager.executeCommand(command, buffer, this)
+            desiredColumn = null
             return
         }
+        
         if (caretBefore == 0) return
+        
         val start = caretBefore - 1
-        deleteRange(start, caretBefore)
+        val deletedText = buffer.get(start until caretBefore).toString()
+        // Calculate cursor position after deletion
+        val tempBuffer = SimpleTextBuffer(buffer.get(0 until buffer.length).toString())
+        tempBuffer.delete(start until caretBefore)
+        val cursorAfter = tempBuffer.toLineCol(start).let { Cursor(it.first, it.second) }
+        
+        val command = DeleteCommand(
+            offset = start,
+            deletedText = deletedText,
+            cursorBefore = cursorBefore,
+            selectionBefore = selectionBefore,
+            cursorAfter = cursorAfter,
+            selectionAfter = null
+        )
+        undoManager.executeCommand(command, buffer, this)
         desiredColumn = null
-        setCursorOffset(start, select = false)
     }
 
     fun deleteForward() {
+        val cursorBefore = state.cursor
+        val selectionBefore = state.selection
         val caretBefore = caretOffset()
         val selection = selectionNormalized()
+        
         if (selection != null && !selection.isEmpty()) {
-            replaceSelection("")
+            // Delete selection
+            val deletedText = buffer.get(selection.start until selection.end).toString()
+            // Calculate cursor position after deletion
+            val tempBuffer = SimpleTextBuffer(buffer.get(0 until buffer.length).toString())
+            tempBuffer.delete(selection.start until selection.end)
+            val cursorAfter = tempBuffer.toLineCol(selection.start).let { Cursor(it.first, it.second) }
+            
+            val command = DeleteCommand(
+                offset = selection.start,
+                deletedText = deletedText,
+                cursorBefore = cursorBefore,
+                selectionBefore = selectionBefore,
+                cursorAfter = cursorAfter,
+                selectionAfter = null
+            )
+            undoManager.executeCommand(command, buffer, this)
+            desiredColumn = null
             return
         }
+        
         if (caretBefore >= buffer.length) return
-        deleteRange(caretBefore, caretBefore + 1)
+        
+        val deletedText = buffer.get(caretBefore until (caretBefore + 1)).toString()
+        val command = DeleteCommand(
+            offset = caretBefore,
+            deletedText = deletedText,
+            cursorBefore = cursorBefore,
+            selectionBefore = selectionBefore,
+            cursorAfter = cursorBefore, // Cursor stays at same position for deleteForward
+            selectionAfter = null
+        )
+        undoManager.executeCommand(command, buffer, this)
         desiredColumn = null
-        setCursorOffset(caretBefore, select = false)
     }
 
-    private fun replaceSelection(text: CharSequence) {
-        val selection = selectionNormalized() ?: return
-        val start = selection.start.coerceIn(0, buffer.length)
-        val end = selection.end.coerceIn(start, buffer.length)
-        deleteRange(start, end)
-        if (text.isNotEmpty()) {
-            buffer.insert(start, text)
-            val target = start + text.length
-            desiredColumn = null
-            setCursorOffset(target, select = false)
-        } else {
-            desiredColumn = null
-            setCursorOffset(start, select = false)
-        }
+    /**
+     * Undo the last editing operation.
+     */
+    fun undo() {
+        undoManager.undo(buffer, this)
     }
+    
+    /**
+     * Redo the last undone operation.
+     */
+    fun redo() {
+        undoManager.redo(buffer, this)
+    }
+    
+    /**
+     * Check if undo is available.
+     */
+    fun canUndo(): Boolean = undoManager.canUndo()
+    
+    /**
+     * Check if redo is available.
+     */
+    fun canRedo(): Boolean = undoManager.canRedo()
 
     fun moveLeft(select: Boolean) {
         val caretBefore = caretOffset()

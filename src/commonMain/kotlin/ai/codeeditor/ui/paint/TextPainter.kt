@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalFontFamilyResolver
 /**
  * TextPainter renders text lines using Skia Paragraph for precise control.
  * No BasicTextField - direct Canvas drawing.
+ * Supports both plain text and styled (syntax highlighted) text.
  */
 class TextPainter(
     private val density: Density,
@@ -31,11 +32,12 @@ class TextPainter(
     data class ParagraphCacheKey(
         val text: String,
         val width: Float,
-        val style: TextStyle
+        val style: TextStyle,
+        val annotationHash: Int = 0  // for styled text caching
     )
 
     /**
-     * Build or retrieve cached paragraph for a line of text.
+     * Build or retrieve cached paragraph for a line of plain text.
      */
     fun getParagraph(text: String, maxWidth: Float): Paragraph {
         val key = ParagraphCacheKey(text, maxWidth, textStyle)
@@ -52,7 +54,30 @@ class TextPainter(
     }
 
     /**
-     * Draw a single line of text at the specified position.
+     * Build or retrieve cached paragraph for styled text (syntax highlighted).
+     */
+    fun getStyledParagraph(annotatedString: AnnotatedString, maxWidth: Float): Paragraph {
+        val key = ParagraphCacheKey(
+            annotatedString.text,
+            maxWidth,
+            textStyle,
+            annotatedString.spanStyles.hashCode()
+        )
+        return cache.getOrPut(key) {
+            Paragraph(
+                text = annotatedString.text,
+                style = textStyle,
+                spanStyles = annotatedString.spanStyles,
+                width = maxWidth,
+                density = density,
+                fontFamilyResolver = fontFamilyResolver,
+                maxLines = 1
+            )
+        }
+    }
+
+    /**
+     * Draw a single line of plain text at the specified position.
      */
     fun DrawScope.drawLine(
         text: String,
@@ -68,7 +93,24 @@ class TextPainter(
     }
 
     /**
+     * Draw a single line of styled text (syntax highlighted) at the specified position.
+     */
+    fun DrawScope.drawStyledLine(
+        annotatedString: AnnotatedString,
+        x: Float,
+        y: Float,
+        maxWidth: Float
+    ) {
+        val paragraph = getStyledParagraph(annotatedString, maxWidth)
+        drawContext.canvas.save()
+        drawContext.canvas.translate(x, y)
+        paragraph.paint(drawContext.canvas)
+        drawContext.canvas.restore()
+    }
+
+    /**
      * Get horizontal position for a column in a line (for caret placement).
+     * Works with both plain and styled text.
      */
     fun getHorizontalPosition(text: String, column: Int, maxWidth: Float): Float {
         val paragraph = getParagraph(text, maxWidth)
