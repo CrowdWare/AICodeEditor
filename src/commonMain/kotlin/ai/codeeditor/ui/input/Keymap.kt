@@ -73,6 +73,10 @@ object Keymap {
                 controller.clearSelection()
                 true
             }
+            Key.Tab -> {
+                controller.insertText("    ")
+                true
+            }
             else -> {
                 // Handle clipboard and editing shortcuts FIRST
                 if (cmdOrCtrl) {

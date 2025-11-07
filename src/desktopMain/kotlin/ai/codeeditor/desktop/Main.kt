@@ -40,6 +40,8 @@ fun main() = application {
                     }
                 }
                 
+                
+                
                 class TextBuffer {
                     private val content = StringBuilder()
                     private val lines = LineIndex()
